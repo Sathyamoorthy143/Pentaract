@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::{errors::PentaractResult, repositories::storage_workers::StorageWorkersRepository};
 
 /// Manages storage workers by limiting their usage
+#[derive(Clone)]
 pub struct StorageWorkersScheduler<'d> {
     repo: StorageWorkersRepository<'d>,
     rate: u8,

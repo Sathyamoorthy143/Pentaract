@@ -8,6 +8,7 @@ use crate::repositories::{access::TABLE as ACCESS_TABLE, files::FILES_TABLE};
 
 pub const TABLE: &str = "storages";
 
+#[derive(Clone)]
 pub struct StoragesRepository<'d> {
     db: &'d PgPool,
 }

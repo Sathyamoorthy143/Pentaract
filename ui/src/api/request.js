@@ -62,38 +62,54 @@ const apiRequest = async (
  * @param {string} path
  * @param {string | null | undefined} auth_token
  * @param {FormData} form
+ * @param {Function} onProgress
  * @returns
  */
-export const apiMultipartRequest = async (path, auth_token, form) => {
+export const apiMultipartRequest = async (path, auth_token, form, onProgress) => {
 	const { addAlert } = alertStore
-
 	const fullpath = `${API_BASE}${path}`
 
-	const headers = new Headers()
-	// headers.append("Content-Type", "multipart/form-data");
-	if (auth_token) {
-		headers.append('Authorization', auth_token)
-	}
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest()
+		xhr.open('POST', fullpath)
 
-	try {
-		const response = await fetch(fullpath, {
-			method: 'post',
-			body: form,
-			headers,
-		})
-
-		if (!response.ok) {
-			throw new Error(await response.text())
+		if (auth_token) {
+			xhr.setRequestHeader('Authorization', auth_token)
 		}
 
-		try {
-			return await response.json()
-		} catch {}
-	} catch (err) {
-		addAlert(err.message, 'error')
+		if (onProgress && xhr.upload) {
+			xhr.upload.onprogress = (e) => {
+				if (e.lengthComputable) {
+					onProgress({
+						loaded: e.loaded,
+						total: e.total,
+						percentage: Math.round((e.loaded / e.total) * 100),
+					})
+				}
+			}
+		}
 
-		throw err
-	}
+		xhr.onload = () => {
+			if (xhr.status >= 200 && xhr.status < 300) {
+				try {
+					resolve(JSON.parse(xhr.responseText))
+				} catch {
+					resolve(null)
+				}
+			} else {
+				const err = xhr.responseText || 'Upload failed'
+				addAlert(err, 'error')
+				reject(new Error(err))
+			}
+		}
+
+		xhr.onerror = () => {
+			addAlert('Network error during upload', 'error')
+			reject(new Error('Network error'))
+		}
+
+		xhr.send(form)
+	})
 }
 
 export default apiRequest

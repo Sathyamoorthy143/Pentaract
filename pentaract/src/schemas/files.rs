@@ -62,3 +62,15 @@ impl DownloadedChunkSchema {
 pub struct SearchQuery {
     pub search_path: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub struct RenameSchema {
+    pub old_path: String,
+    pub new_path: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateNoteSchema {
+    pub path: String,
+    pub note: String,
+}

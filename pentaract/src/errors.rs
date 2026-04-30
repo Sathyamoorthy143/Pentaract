@@ -25,6 +25,8 @@ pub enum PentaractError {
     StorageWorkerTokenConflict,
     #[error("not authenticated")]
     NotAuthenticated,
+    #[error("unauthorized")]
+    Unauthorized,
     #[error("[Telegram API] {0}")]
     TelegramAPIError(String),
     #[error("You need to add at least 1 storage worker")]
@@ -55,7 +57,9 @@ impl From<PentaractError> for (StatusCode, String) {
             | PentaractError::StorageWorkerTokenConflict
             | PentaractError::StorageDoesNotHaveWorkers
             | PentaractError::CannotManageAccessOfYourself => (StatusCode::CONFLICT, e.to_string()),
-            PentaractError::NotAuthenticated => (StatusCode::UNAUTHORIZED, e.to_string()),
+            PentaractError::NotAuthenticated | PentaractError::Unauthorized => {
+                (StatusCode::UNAUTHORIZED, e.to_string())
+            }
             PentaractError::DoesNotExist(_) => (StatusCode::NOT_FOUND, e.to_string()),
             PentaractError::HeaderMissed(_)
             | PentaractError::HeaderIsInvalid(..)

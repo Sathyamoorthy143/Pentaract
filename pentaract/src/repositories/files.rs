@@ -65,25 +65,27 @@ impl<'d> FilesRepository<'d> {
         Ok(storage)
     }
 
-    /// Creates a file even if the given path already exists
+    /// Creates a file even if the given path already exists (auto-renames with suffix like " (1)")
     pub async fn create_file_anyway(&self, in_obj: InFile) -> PentaractResult<File> {
         let id = Uuid::new_v4();
 
-        // lol/kek/sdf.nj.dskf/sdkl.fdsklf/lol .kek.dsf
+        // Split the path into stem and extension so we can append " (N)" before the extension.
+        // e.g. "lol/kek/file.tar.gz"  →  stem = "lol/kek/file", suffix = ".tar.gz"
         let (path_with_stem, suffix) = {
-            let mut splited_path: Vec<_> = in_obj.path.split("/").collect();
+            let mut splited_path: Vec<_> = in_obj.path.split('/').collect();
             let last = splited_path.last_mut().unwrap();
             let mut suffix = String::new();
             (*last, suffix) = last
-                .split_once(".")
-                .map(|(stem, suffix)| (stem, format!(".{suffix}")))
-                .unwrap_or((last, "".to_owned()));
+                .split_once('.')
+                .map(|(stem, suf)| (stem, format!(".{suf}")))
+                .unwrap_or((last, String::new()));
             (splited_path.join("/"), suffix)
         };
 
-        println!("{path_with_stem} {suffix}");
+        // BUG FIX #4: removed the stray `println!("{path_with_stem} {suffix}")` that
+        // was left from debugging and would spam stdout in production.
 
-        let chars_to_skip = path_with_stem.len() + 3; // if the name is `kek` then it's gonna be a len of `kek (` + 1
+        let chars_to_skip = path_with_stem.len() + 3; // len("stem (") + 1 for the space before '('
         let skip_chars_from_back = chars_to_skip + suffix.len();
 
         // https://www.db-fiddle.com/f/i6XCvTSi5cpAVu5AAfiNqm/16
@@ -196,7 +198,7 @@ impl<'d> FilesRepository<'d> {
     ) -> PentaractResult<Vec<FSElement>> {
         let query = {
             let adding_to_position = !prefix.is_empty() as usize + 1;
-            let split_position = prefix.matches("/").count() + adding_to_position;
+            let split_position = prefix.matches('/').count() + adding_to_position;
             let split_part = format!("SPLIT_PART(path, '/', {split_position})");
             let path_filter = if prefix.is_empty() {
                 ""
@@ -256,11 +258,16 @@ impl<'d> FilesRepository<'d> {
         path: &str,
         storage_id: Uuid,
     ) -> PentaractResult<Vec<SearchFSElement>> {
+        // BUG FIX #3: The original query used `path LIKE '%/' AS is_file`.
+        // A path that ends with '/' is a FOLDER entry, not a file.
+        // The inverted expression `path NOT LIKE '%/' AS is_file` is correct:
+        //   - files  → path = "folder/file.txt"  → does NOT end with '/'  → is_file = TRUE  ✓
+        //   - folders → path = "folder/"          → ends with '/'          → is_file = FALSE ✓
         sqlx::query_as(
             format!(
                 "SELECT
                     path,
-                    path LIKE '%/' AS is_file
+                    path NOT LIKE '%/' AS is_file
                 FROM {FILES_TABLE}
                 WHERE storage_id = $1 AND path ILIKE $2 || '%' || $3 || '%'
             "
@@ -345,15 +352,15 @@ impl<'d> FilesRepository<'d> {
     pub async fn delete(&self, path: &str, storage_id: Uuid) -> PentaractResult<()> {
         let mut transaction = self.db.begin().await.map_err(|e| map_not_found(e, ""))?;
 
-        let where_path = if path.ends_with("/") {
-            // for folders
+        let where_path = if path.ends_with('/') {
+            // for folders: delete every file whose path starts with this prefix
             "LIKE $2 || '%'"
         } else {
-            // for files
+            // for files: exact match
             "= $2"
         };
 
-        // deleting file
+        // Delete the file (or all files inside the folder)
         sqlx::query(&format!(
             "
             DELETE FROM {FILES_TABLE}
@@ -366,8 +373,9 @@ impl<'d> FilesRepository<'d> {
         .await
         .map_err(|e| map_not_found(e, "file"))?;
 
-        // creating a folder if it was the file in the folder
-        if let Some(parent) = Path::new(path).parent().map(|path| path.to_str().unwrap()) {
+        // If we just deleted the last file inside a folder, insert a placeholder folder
+        // entry so the parent directory still appears in list_dir.
+        if let Some(parent) = Path::new(path).parent().map(|p| p.to_str().unwrap()) {
             let new_id = Uuid::new_v4();
             let parent = format!("{parent}/");
 

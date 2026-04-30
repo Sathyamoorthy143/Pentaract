@@ -48,7 +48,11 @@ function createLocalStore(prefix = null, storage = localStorage) {
 			}
 		),
 		(key, value) => {
-			storage.setItem(`${propPrefix}${key}`, JSON.stringify(value))
+			if (value === undefined || value === null) {
+				storage.removeItem(`${propPrefix}${key}`)
+			} else {
+				storage.setItem(`${propPrefix}${key}`, JSON.stringify(value))
+			}
 			const node = signals.get(key)
 			node && node[1]()
 		},

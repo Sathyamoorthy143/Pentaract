@@ -31,7 +31,9 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"]} 
 
 # others
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
 thiserror = "1.0.50"
 uuid = { version = "1.5.0", features = ["serde", "v4"] }
 reqwest = { version = "0.11.22", features = ["multipart", "json"] }
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder", "hostname"] }
+chrono = { version = "0.4", features = ["serde"] }

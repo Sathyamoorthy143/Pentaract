@@ -10,6 +10,7 @@ use crate::{
             ClientData, ClientMessage, ClientSender, DownloadFileData, StorageManagerData,
             UploadFileData,
         },
+        email::EmailService,
         jwt_manager::AuthUser,
     },
     errors::{PentaractError, PentaractResult},
@@ -19,6 +20,7 @@ use crate::{
     },
     repositories::{
         access::AccessRepository, files::FilesRepository, storage_workers::StorageWorkersRepository,
+        activity_logs::ActivityLogsRepository,
     },
     schemas::files::{InFileSchema, InFolderSchema},
 };
@@ -27,18 +29,23 @@ pub struct FilesService<'d> {
     repo: FilesRepository<'d>,
     storage_workers_repo: StorageWorkersRepository<'d>,
     access_repo: AccessRepository<'d>,
+    activity_logs_repo: ActivityLogsRepository<'d>,
+    email_service: Option<EmailService>,
     tx: ClientSender,
 }
 
 impl<'d> FilesService<'d> {
-    pub fn new(db: &'d PgPool, tx: ClientSender) -> Self {
+    pub fn new(db: &'d PgPool, tx: ClientSender, email_service: Option<EmailService>) -> Self {
         let repo = FilesRepository::new(db);
         let storage_workers_repo = StorageWorkersRepository::new(db);
         let access_repo = AccessRepository::new(db);
+        let activity_logs_repo = ActivityLogsRepository::new(db);
         Self {
             repo,
             access_repo,
             storage_workers_repo,
+            activity_logs_repo,
+            email_service,
             tx,
         }
     }
@@ -71,10 +78,12 @@ impl<'d> FilesService<'d> {
         } else {
             format!("{}/", in_schema.folder_name)
         };
-        let in_file = InFile::new(path, 0, in_schema.storage_id);
+        let in_file = InFile::new(path.clone(), 0, in_schema.storage_id);
 
         // 3. saving to db
-        self.repo.create_folder(in_file).await.map(|_| ())
+        self.repo.create_folder(in_file).await?;
+        let _ = self.activity_logs_repo.log(user.id, "CREATE_FOLDER", &path).await;
+        Ok(())
     }
 
     pub async fn upload_to(&self, in_schema: InFileSchema, user: &AuthUser) -> PentaractResult<()> {
@@ -98,7 +107,7 @@ impl<'d> FilesService<'d> {
         let in_file = InFile::new(in_schema.path, in_schema.size, in_schema.storage_id);
 
         // 3. saving file to db
-        let file = self.repo.create_file(in_file).await?;
+        let file = self.repo.create_file_anyway(in_file).await?;
 
         self._upload(file, in_schema.file, user).await
     }
@@ -151,19 +160,30 @@ impl<'d> FilesService<'d> {
             StorageManagerData::UploadFile(r) => r,
             _ => unimplemented!(),
         };
-        if let Err(e) = message_back.and({
-            tracing::debug!("file loaded successfully");
 
-            // 4. setting file as uploaded
-            self.repo.set_as_uploaded(file.id).await
-        }) {
+        if let Err(e) = message_back {
+            println!("\n[FATAL ERROR] TELEGRAM REJECTED UPLOAD: {:?}\n", e);
             tracing::error!("{e}");
 
             // fallback logic: deleting file
             let _ = self.repo.delete_with_folders(file.id).await;
 
             return Err(e);
-        };
+        }
+
+        tracing::debug!("!!!! THE CODE IS NEW !!!!");
+
+        // 4. setting file as uploaded
+        self.repo.set_as_uploaded(file.id).await?;
+
+        // 5. sending notification (non-blocking)
+        if let Some(email_service) = self.email_service.clone() {
+            let to_email = user.email.clone();
+            let file_path = file.path.clone();
+            tokio::spawn(async move {
+                let _ = email_service.send_activity_notification(&to_email, "UPLOADED", &file_path).await;
+            });
+        }
 
         Ok(())
     }
@@ -261,7 +281,48 @@ impl<'d> FilesService<'d> {
         }
 
         // 2. renaming file
-        self.repo.update_path(old_path, new_path, storage_id).await
+        self.repo.update_path(old_path, new_path, storage_id).await?;
+        let _ = self.activity_logs_repo.log(user.id, "RENAME", &format!("{} -> {}", old_path, new_path)).await;
+
+        // sending notification (non-blocking)
+        if let Some(email_service) = self.email_service.clone() {
+            let to_email = user.email.clone();
+            let details = format!("{} to {}", old_path, new_path);
+            tokio::spawn(async move {
+                let _ = email_service.send_activity_notification(&to_email, "RENAMED", &details).await;
+            });
+        }
+        Ok(())
+    }
+
+    pub async fn copy(
+        &self,
+        old_path: &str,
+        new_path: &str,
+        storage_id: Uuid,
+        user: &AuthUser,
+    ) -> PentaractResult<()> {
+        // 0. checking access
+        check_access(&self.access_repo, user.id, storage_id, &AccessType::W).await?;
+
+        // 1. path validation
+        if !Self::validate_path(old_path) || !Self::validate_path(new_path) {
+            return Err(PentaractError::InvalidPath);
+        }
+
+        // 2. copying file
+        self.repo.copy(old_path, new_path, storage_id).await?;
+        let _ = self.activity_logs_repo.log(user.id, "COPY", &format!("{} -> {}", old_path, new_path)).await;
+
+        // sending notification (non-blocking)
+        if let Some(email_service) = self.email_service.clone() {
+            let to_email = user.email.clone();
+            let details = format!("{} to {}", old_path, new_path);
+            tokio::spawn(async move {
+                let _ = email_service.send_activity_notification(&to_email, "COPIED", &details).await;
+            });
+        }
+        Ok(())
     }
 
     pub async fn delete(
@@ -279,7 +340,18 @@ impl<'d> FilesService<'d> {
         }
 
         // 2. deleting file
-        self.repo.delete(path, storage_id).await
+        self.repo.delete(path, storage_id).await?;
+        let _ = self.activity_logs_repo.log(user.id, "DELETE", path).await;
+
+        // 3. sending notification (non-blocking)
+        if let Some(email_service) = self.email_service.clone() {
+            let to_email = user.email.clone();
+            let file_path = path.to_string();
+            tokio::spawn(async move {
+                let _ = email_service.send_activity_notification(&to_email, "DELETED", &file_path).await;
+            });
+        }
+        Ok(())
     }
 
     /////////////////////////////////////////////////////////////////////
@@ -291,6 +363,6 @@ impl<'d> FilesService<'d> {
     }
 
     fn validate_path(path: &str) -> bool {
-        !path.starts_with(r"/") && !path.contains(r"//")
+        !path.starts_with("/") && !path.contains("//")
     }
 }

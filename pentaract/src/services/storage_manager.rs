@@ -8,7 +8,7 @@ use crate::{
         telegram_api::bot_api::TelegramBotApi,
         types::ChatId,
     },
-    errors::PentaractResult,
+    errors::{PentaractError, PentaractResult},
     models::file_chunks::FileChunk,
     repositories::{files::FilesRepository, storages::StoragesRepository},
     schemas::files::DownloadedChunkSchema,
@@ -45,23 +45,39 @@ impl<'d> StorageManagerService<'d> {
         let storage = self.storages_repo.get_by_file_id(data.file_id).await?;
 
         // 2. dividing file into chunks
-        let bytes_chunks = data.file_data.chunks(self.chunk_size);
+        let bytes_chunks: Vec<Vec<u8>> = data.file_data.chunks(self.chunk_size).map(|c| c.to_vec()).collect();
 
-        // 3. uploading by chunks
-        let futures_: Vec<_> = bytes_chunks
-            .enumerate()
-            .map(|(position, bytes_chunk)| {
-                self.upload_chunk(
-                    storage.id,
-                    storage.chat_id,
-                    data.file_id,
-                    position,
-                    bytes_chunk,
-                )
+        use futures::stream::{self, StreamExt};
+
+        // 3. uploading by chunks with concurrency limit
+        let telegram_baseurl = self.telegram_baseurl.to_owned();
+        let db = self.db.clone();
+        let rate_limit = self.rate_limit;
+
+        let chunks = stream::iter(bytes_chunks.into_iter().enumerate())
+            .map(|(position, chunk_data)| {
+                let telegram_baseurl = telegram_baseurl.clone();
+                let db = db.clone();
+                let storage_id = storage.id;
+                let chat_id = storage.chat_id;
+                let file_id = data.file_id;
+
+                async move {
+                    Self::upload_chunk_static(
+                        &db,
+                        &telegram_baseurl,
+                        rate_limit,
+                        storage_id,
+                        chat_id,
+                        file_id,
+                        position,
+                        chunk_data,
+                    )
+                    .await
+                }
             })
-            .collect();
-
-        let chunks = join_all(futures_)
+            .buffered(2) // Limit to 2 concurrent uploads
+            .collect::<Vec<_>>()
             .await
             .into_iter()
             .collect::<PentaractResult<Vec<_>>>()?;
@@ -70,28 +86,51 @@ impl<'d> StorageManagerService<'d> {
         self.files_repo.create_chunks_batch(chunks).await
     }
 
-    async fn upload_chunk(
-        &self,
+    async fn upload_chunk_static(
+        db: &PgPool,
+        telegram_baseurl: &str,
+        rate_limit: u8,
         storage_id: Uuid,
         chat_id: ChatId,
         file_id: Uuid,
         position: usize,
-        bytes_chunk: &[u8],
+        bytes_chunk: Vec<u8>,
     ) -> PentaractResult<FileChunk> {
-        let scheduler = StorageWorkersScheduler::new(self.db, self.rate_limit);
+        let scheduler = StorageWorkersScheduler::new(db, rate_limit);
+        let mut last_error = None;
 
-        let document = TelegramBotApi::new(self.telegram_baseurl, scheduler)
-            .upload(bytes_chunk, chat_id, storage_id)
-            .await?;
+        for attempt in 1..=3 {
+            tracing::debug!("Uploading chunk {} (attempt {})", position, attempt);
 
-        tracing::debug!(
-            "[TELEGRAM API] uploaded chunk with file_id \"{}\" and position \"{}\"",
-            document.file_id,
-            position
-        );
+            match TelegramBotApi::new(telegram_baseurl, scheduler.clone()).upload(&bytes_chunk, chat_id, storage_id).await
+            {
+                Ok(document) => {
+                    tracing::debug!(
+                        "[TELEGRAM API] uploaded chunk with file_id \"{}\" and position \"{}\"",
+                        document.file_id,
+                        position
+                    );
 
-        let chunk = FileChunk::new(Uuid::new_v4(), file_id, document.file_id, position as i16);
-        Ok(chunk)
+                    let chunk =
+                        FileChunk::new(Uuid::new_v4(), file_id, document.file_id, position as i16);
+                    return Ok(chunk);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Upload attempt {} failed for chunk {}: {:?}",
+                        attempt,
+                        position,
+                        e
+                    );
+                    last_error = Some(e);
+                    if attempt < 3 {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(PentaractError::Unknown))
     }
 
     pub async fn download(&self, data: DownloadFileData) -> PentaractResult<Vec<u8>> {

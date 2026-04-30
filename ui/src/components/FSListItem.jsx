@@ -11,7 +11,9 @@ import MoreVertIcon from '@suid/icons-material/MoreVert'
 import DownloadIcon from '@suid/icons-material/Download'
 import InfoIcon from '@suid/icons-material/Info'
 import DeleteIcon from '@suid/icons-material/Delete'
-import { createSignal } from 'solid-js'
+// BUG FIX #1: Show was used in JSX but never imported — caused a runtime crash
+// where <Show when={...}> rendered as undefined component.
+import { Show, createSignal } from 'solid-js'
 import { useNavigate, useParams } from '@solidjs/router'
 
 import API from '../api'
@@ -76,7 +78,19 @@ const FSListItem = (props) => {
 
 	const deleteFile = async () => {
 		closeActionConfirmDialog()
-		await API.files.deleteFile(params.id, props.fsElement.path)
+
+		// BUG FIX #2: Folders are stored in the DB with a trailing '/'.
+		// list_dir returns names without the slash (SPLIT_PART strips it),
+		// so the path for a folder like "docs" comes back as "docs" — not "docs/".
+		// The backend DELETE handler checks path.ends_with('/') to decide whether
+		// to do an exact match (file) or a LIKE prefix match (folder + children).
+		// Without the slash the backend treated folder deletes as file deletes,
+		// found nothing, and silently returned OK — leaving the folder intact.
+		const pathToDelete = props.fsElement.is_file
+			? props.fsElement.path
+			: `${props.fsElement.path}/`
+
+		await API.files.deleteFile(params.id, pathToDelete)
 		props.onDelete()
 	}
 
@@ -130,8 +144,8 @@ const FSListItem = (props) => {
 
 			<ActionConfirmDialog
 				action="Delete"
-				entity="file"
-				actionDescription={`delete file ${props.fsElement.name}`}
+				entity={props.fsElement.is_file ? 'file' : 'folder'}
+				actionDescription={`delete ${props.fsElement.is_file ? 'file' : 'folder'} "${props.fsElement.name}"`}
 				isOpened={isActionConfirmDialogOpened()}
 				onConfirm={deleteFile}
 				onCancel={closeActionConfirmDialog}

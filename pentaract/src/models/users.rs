@@ -17,6 +17,7 @@ pub struct User {
     pub id: uuid::Uuid,
     pub email: String,
     pub password_hash: String,
+    pub master_password_hash: Option<String>,
 }
 
 impl User {
@@ -25,6 +26,7 @@ impl User {
             id,
             email,
             password_hash,
+            master_password_hash: None,
         }
     }
 }

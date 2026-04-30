@@ -19,6 +19,11 @@ pub struct Config {
 
     pub telegram_api_base_url: String,
     pub telegram_rate_limit: u8,
+
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_user: String,
+    pub smtp_pass: String,
 }
 
 impl Config {
@@ -42,6 +47,11 @@ impl Config {
         let secret_key = Self::get_env_var("SECRET_KEY")?;
         let telegram_api_base_url = Self::get_env_var("TELEGRAM_API_BASE_URL")?;
         let telegram_rate_limit = Self::get_env_var_with_default("TELEGRAM_RATE_LIMIT", 18)?;
+        
+        let smtp_host = Self::get_env_var_with_default("SMTP_HOST", "smtp.gmail.com".to_string())?;
+        let smtp_port = Self::get_env_var_with_default("SMTP_PORT", 587)?;
+        let smtp_user = Self::get_env_var_with_default("SMTP_USER", "".to_string())?;
+        let smtp_pass = Self::get_env_var_with_default("SMTP_PASS", "".to_string())?;
 
         Ok(Self {
             db_uri,
@@ -57,6 +67,10 @@ impl Config {
             secret_key,
             telegram_api_base_url,
             telegram_rate_limit,
+            smtp_host,
+            smtp_port,
+            smtp_user,
+            smtp_pass,
         })
     }
 

@@ -2,7 +2,7 @@ use reqwest::multipart;
 use uuid::Uuid;
 
 use crate::{
-    common::types::ChatId, errors::PentaractResult,
+    common::types::ChatId, errors::{PentaractError, PentaractResult},
     services::storage_workers_scheduler::StorageWorkersScheduler,
 };
 
@@ -27,15 +27,6 @@ impl<'t> TelegramBotApi<'t> {
         chat_id: ChatId,
         storage_id: Uuid,
     ) -> PentaractResult<UploadSchema> {
-        let chat_id = {
-            // inserting 100 between minus sign and chat id
-            // cause telegram devs are complete retards and it works this way only
-            //
-            // https://stackoverflow.com/a/65965402/12255756
-
-            let n = chat_id.abs().checked_ilog10().unwrap_or(0) + 1;
-            chat_id - (100 * ChatId::from(10).pow(n))
-        };
 
         let token = self.scheduler.get_token(storage_id).await?;
         let url = self.build_url("", "sendDocument", token);
@@ -45,17 +36,32 @@ impl<'t> TelegramBotApi<'t> {
             .text("chat_id", chat_id.to_string())
             .part("document", file_part);
 
-        let response = reqwest::Client::new()
+        // Adding timeout and basic retry logic
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .map_err(|_e| PentaractError::Unknown)?;
+
+        let response = client
             .post(url)
             .multipart(form)
             .send()
             .await?;
 
-        match response.error_for_status() {
-            // https://stackoverflow.com/a/32679930/12255756
-            Ok(r) => Ok(r.json::<UploadBodySchema>().await?.result.document),
-            Err(e) => Err(e.into()),
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Could not read error body".to_string());
+            
+            // Force printing to console for immediate visibility
+            println!("\n!!! TELEGRAM CRITICAL ERROR !!!");
+            println!("Status: {}", status);
+            println!("Body: {}\n", error_text);
+            
+            tracing::error!("[TELEGRAM API ERROR] Status: {}, Body: {}", status, error_text);
+            return Err(PentaractError::Unknown);
         }
+
+        Ok(response.json::<UploadBodySchema>().await?.result.document)
     }
 
     pub async fn download(

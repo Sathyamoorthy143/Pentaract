@@ -61,15 +61,22 @@ pub async fn init_db(db: &PgPool) {
         );
 
     ",
+        // BUG FIX #7: Added UNIQUE(name, user_id) constraint so that the database
+        // itself enforces one-name-per-user uniqueness for storage workers.
+        // Previously only the application service layer checked this, leaving a
+        // TOCTOU window where two concurrent requests could both pass the check
+        // and create duplicate rows.  The unique constraint also matches the
+        // StorageWorkerNameConflict error path that the service already returns.
         "
         CREATE TABLE IF NOT EXISTS storage_workers (
             id         UUID         PRIMARY KEY,
             name       VARCHAR(255) NOT NULL,
             token      VARCHAR(255) NOT NULL UNIQUE,
             user_id    UUID         NOT NULL REFERENCES users
-                                            ON DELETE CASCADE 
+                                            ON DELETE CASCADE
                                             ON UPDATE CASCADE,
-            storage_id UUID         REFERENCES storages
+            storage_id UUID         REFERENCES storages,
+            UNIQUE(name, user_id)
         );
 
     ",
@@ -92,10 +99,10 @@ pub async fn init_db(db: &PgPool) {
         CREATE TABLE IF NOT EXISTS access (
             id          UUID        PRIMARY KEY,
             user_id     UUID        NOT NULL REFERENCES users
-                                            ON DELETE CASCADE 
+                                            ON DELETE CASCADE
                                             ON UPDATE CASCADE,
             storage_id  UUID        NOT NULL REFERENCES storages
-                                            ON DELETE CASCADE 
+                                            ON DELETE CASCADE
                                             ON UPDATE CASCADE,
             access_type access_type NOT NULL,
 
@@ -108,7 +115,7 @@ pub async fn init_db(db: &PgPool) {
             path        VARCHAR      NOT NULL,
             size        BigInt       NOT NULL,
             storage_id  UUID         NOT NULL REFERENCES storages
-                                            ON DELETE CASCADE 
+                                            ON DELETE CASCADE
                                             ON UPDATE CASCADE,
             is_uploaded bool         NOT NULL,
 
@@ -118,8 +125,8 @@ pub async fn init_db(db: &PgPool) {
         "
         CREATE TABLE IF NOT EXISTS file_chunks (
             id               UUID         PRIMARY KEY,
-            file_id          UUID         NOT NULL REFERENCES files 
-                                                ON DELETE CASCADE 
+            file_id          UUID         NOT NULL REFERENCES files
+                                                ON DELETE CASCADE
                                                 ON UPDATE CASCADE,
             telegram_file_id VARCHAR(255) NOT NULL,
             position         SmallInt     NOT NULL
@@ -129,7 +136,7 @@ pub async fn init_db(db: &PgPool) {
         CREATE TABLE IF NOT EXISTS storage_workers_usages (
             id                 UUID      PRIMARY KEY,
             storage_worker_id  UUID      NOT NULL REFERENCES storage_workers
-                                                ON DELETE CASCADE 
+                                                ON DELETE CASCADE
                                                 ON UPDATE CASCADE,
             dt                 TIMESTAMP DEFAULT NOW()
         );
@@ -151,7 +158,7 @@ pub async fn init_db(db: &PgPool) {
             *   Takes in a TEXT in and escapes all of the necessary characters so that
             *   the output can be used as a regular expression to match the input as if
             *   it were a literal pattern.
-            * Source: https://cwestblog.com/2012/07/10/postgresql-escape-regular-expressions/ * 
+            * Source: https://cwestblog.com/2012/07/10/postgresql-escape-regular-expressions/
             *     The original one doesn't work anymore.
             ******************************************************************************/
         BEGIN
@@ -177,17 +184,17 @@ pub async fn init_db(db: &PgPool) {
 pub async fn create_superuser(db: &PgPool, config: &Config) {
     let password_hash = PasswordManager::generate(&config.superuser_pass).unwrap();
     let user = InDBUser::new(config.superuser_email.clone(), password_hash);
-    let result = UsersRepository::new(&db).create(user).await;
+    let result = UsersRepository::new(db).create(user).await;
 
     match result {
         Ok(_) => tracing::debug!("created superuser"),
 
-        // ignoring conflict error -> just skipping it
+        // Ignoring conflict — superuser already exists on subsequent boots
         Err(e) if matches!(e, PentaractError::AlreadyExists(_)) => {
             tracing::debug!("superuser already exists; skipping")
         }
 
-        // in case of another error kind -> terminating process
+        // Any other error is fatal — we can't operate without a superuser
         _ => {
             panic!("can't create superuser; terminating process")
         }

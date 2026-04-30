@@ -23,7 +23,7 @@ use crate::{
 pub struct StorageWorkersRouter;
 
 impl StorageWorkersRouter {
-    pub fn get_router(state: Arc<AppState>) -> Router {
+    pub fn get_router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         Router::new()
             .route("/", get(Self::list).post(Self::create))
             .route("/has_workers", get(Self::has_storages_workers))

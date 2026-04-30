@@ -6,9 +6,13 @@ export function checkAuth() {
 	const navigate = useNavigate()
 	const location = useLocation()
 
+	// Save current location as "Memory"
+	if (location.pathname !== '/login' && location.pathname !== '/register') {
+		localStorage.setItem('last_viewed_path', location.pathname)
+	}
+
 	if (!store.access_token) {
 		setStore('redirect', location.pathname)
-
 		navigate('/login')
 	}
 }

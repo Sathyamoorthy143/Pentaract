@@ -5,6 +5,7 @@ use crate::common::db::errors::map_not_found;
 use crate::errors::{PentaractError, PentaractResult};
 use crate::models::users::{InDBUser, User};
 
+#[derive(Clone)]
 pub struct UsersRepository<'d> {
     db: &'d PgPool,
 }
@@ -48,5 +49,22 @@ impl<'d> UsersRepository<'d> {
             .fetch_one(self.db)
             .await
             .map_err(|e| map_not_found(e, "user"))
+    }
+    pub async fn get_by_id(&self, id: Uuid) -> PentaractResult<User> {
+        sqlx::query_as("SELECT * FROM users WHERE id = $1")
+            .bind(id)
+            .fetch_one(self.db)
+            .await
+            .map_err(|e| map_not_found(e, "user"))
+    }
+
+    pub async fn update_master_password_hash(&self, id: Uuid, hash: &str) -> PentaractResult<()> {
+        sqlx::query("UPDATE users SET master_password_hash = $1 WHERE id = $2")
+            .bind(hash)
+            .bind(id)
+            .execute(self.db)
+            .await
+            .map_err(|_| PentaractError::Unknown)
+            .map(|_| ())
     }
 }

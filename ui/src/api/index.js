@@ -217,9 +217,10 @@ const createFolder = async (storage_id, path, folderName) => {
  * @param {string} storage_id
  * @param {string} path
  * @param {any} file
+ * @param {Function} onProgress
  * @returns
  */
-const uploadFile = async (storage_id, path, file) => {
+const uploadFile = async (storage_id, path, file, onProgress) => {
 	const form = new FormData()
 	form.append('file', file)
 	form.append('path', path)
@@ -227,7 +228,8 @@ const uploadFile = async (storage_id, path, file) => {
 	return await apiMultipartRequest(
 		`/storages/${storage_id}/files/upload`,
 		getAuthToken(),
-		form
+		form,
+		onProgress
 	)
 }
 
@@ -335,12 +337,39 @@ const API = {
 		getFSLayer,
 		download,
 		deleteFile,
+		rename: async (storage_id, old_path, new_path) => {
+			return await apiRequest(`/storages/${storage_id}/files/rename`, 'post', getAuthToken(), { old_path, new_path })
+		},
+		copy: async (storage_id, old_path, new_path) => {
+			return await apiRequest(`/storages/${storage_id}/files/copy`, 'post', getAuthToken(), { old_path, new_path })
+		},
 	},
+	users: {
+		register,
+		setMasterPassword: async (password) => {
+			return await apiRequest('/users/master_password', 'post', getAuthToken(), { password })
+		},
+		verifyMasterPassword: async (password) => {
+			return await apiRequest('/users/master_password/verify', 'post', getAuthToken(), { password })
+		},
+	},
+	logs: {
+		listLogs: async () => {
+			return await apiRequest('/activity_logs', 'get', getAuthToken())
+		}
+	}
 }
 
 const getAuthToken = () => {
-	const [store, _setStore] = createLocalStore()
-	return `Bearer ${store.access_token}`
+	const token = localStorage.getItem('access_token')
+	if (!token || token === 'null' || token === 'undefined') return ''
+	try {
+		const parsed = JSON.parse(token)
+		if (!parsed || parsed === 'null' || parsed === 'undefined') return ''
+		return `Bearer ${parsed}`
+	} catch (_) {
+		return `Bearer ${token}`
+	}
 }
 
 export default API

@@ -21,7 +21,8 @@ use crate::{
     errors::{PentaractError, PentaractResult},
     models::files::InFile,
     schemas::files::{
-        InFileSchema, InFolderSchema, SearchQuery, UploadParams, IN_FILE_SCHEMA_FIELDS_AMOUNT,
+        InFileSchema, InFolderSchema, RenameSchema, SearchQuery, UploadParams,
+        IN_FILE_SCHEMA_FIELDS_AMOUNT,
     },
     services::files::FilesService,
 };
@@ -34,6 +35,8 @@ impl FilesRouter {
             .route("/create_folder", post(Self::create_folder))
             .route("/upload", post(Self::upload))
             .route("/upload_to", post(Self::upload_to))
+            .route("/rename", post(Self::rename))
+            .route("/copy", post(Self::copy))
             .route("/*path", get(Self::dynamic_get).delete(Self::delete))
             .layer(DefaultBodyLimit::disable())
             .route_layer(middleware::from_fn_with_state(
@@ -73,7 +76,7 @@ impl FilesRouter {
         storage_id: Uuid,
         path: &str,
     ) -> Result<Response, (StatusCode, String)> {
-        let fs_layer = FilesService::new(&state.db, state.tx.clone())
+        let fs_layer = FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
             .list_dir(storage_id, path, &user)
             .await?;
         Ok(Json(fs_layer).into_response())
@@ -115,7 +118,7 @@ impl FilesRouter {
         let size = file.len() as i64;
         let in_file = InFile::new(path, size, storage_id);
 
-        FilesService::new(&state.db, state.tx.clone())
+        FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
             .upload_anyway(in_file, file, &user)
             .await?;
         Ok(StatusCode::CREATED)
@@ -153,7 +156,7 @@ impl FilesRouter {
         };
 
         // do all other stuff
-        FilesService::new(&state.db, state.tx.clone())
+        FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
             .upload_to(in_schema, &user)
             .await?;
 
@@ -168,7 +171,7 @@ impl FilesRouter {
     ) -> Result<StatusCode, (StatusCode, String)> {
         let in_schema = InFolderSchema::new(storage_id, params.path, params.folder_name);
 
-        FilesService::new(&state.db, state.tx.clone())
+        FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
             .create_folder(in_schema, &user)
             .await?;
         Ok(StatusCode::CREATED)
@@ -189,7 +192,7 @@ impl FilesRouter {
         storage_id: Uuid,
         path: &str,
     ) -> Result<Response, (StatusCode, String)> {
-        FilesService::new(&state.db, state.tx.clone())
+        FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
             .download(path, storage_id, &user)
             .await
             .map(|data| {
@@ -226,7 +229,7 @@ impl FilesRouter {
         path: &str,
         search_path: &str,
     ) -> Result<Response, (StatusCode, String)> {
-        FilesService::new(&state.db, state.tx.clone())
+        FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
             .search(storage_id, path, search_path, &user)
             .await
             .map(|files| Json(files).into_response())
@@ -238,11 +241,39 @@ impl FilesRouter {
         Extension(user): Extension<AuthUser>,
         RoutePath((storage_id, path)): RoutePath<(Uuid, String)>,
     ) -> Result<(), (StatusCode, String)> {
-        FilesService::new(&state.db, state.tx.clone())
+        FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
             .delete(&path, storage_id, &user)
             .await
             .map_err(|e| <(StatusCode, String)>::from(e))?;
 
         Ok(())
+    }
+
+    async fn rename(
+        State(state): State<Arc<AppState>>,
+        Extension(user): Extension<AuthUser>,
+        RoutePath(storage_id): RoutePath<Uuid>,
+        Json(params): Json<RenameSchema>,
+    ) -> Result<StatusCode, (StatusCode, String)> {
+        FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
+            .rename(&params.old_path, &params.new_path, storage_id, &user)
+            .await
+            .map_err(|e| <(StatusCode, String)>::from(e))?;
+
+        Ok(StatusCode::OK)
+    }
+
+    async fn copy(
+        State(state): State<Arc<AppState>>,
+        Extension(user): Extension<AuthUser>,
+        RoutePath(storage_id): RoutePath<Uuid>,
+        Json(params): Json<RenameSchema>,
+    ) -> Result<StatusCode, (StatusCode, String)> {
+        FilesService::new(&state.db, state.tx.clone(), Some(state.email_service.clone()))
+            .copy(&params.old_path, &params.new_path, storage_id, &user)
+            .await
+            .map_err(|e| <(StatusCode, String)>::from(e))?;
+
+        Ok(StatusCode::OK)
     }
 }

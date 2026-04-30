@@ -11,6 +11,8 @@ import StorageWorkerCreateForm from './pages/StorageWorkers/StorageWorkerCreateF
 import Files from './pages/Files'
 import UploadFileTo from './pages/Files/UploadFileTo'
 import Register from './pages/Register'
+import ActivityLog from './pages/ActivityLog'
+import VaultRecovery from './pages/VaultRecovery'
 import NotFound from './pages/404'
 
 const theme = createTheme({
@@ -30,6 +32,7 @@ const App = () => {
 			<Routes>
 				<Route path="/login" component={Login} />
 				<Route path="/register" component={Register} />
+				<Route path="/vault-recovery" component={VaultRecovery} />
 
 				<Route path="/" component={BasicLayout}>
 					<Route path="/" element={<Navigate href="/storages" />} />
@@ -42,6 +45,7 @@ const App = () => {
 						path="/storage_workers/register"
 						component={StorageWorkerCreateForm}
 					/>
+					<Route path="/logs" component={ActivityLog} />
 					<Route path="*404" component={NotFound} />
 				</Route>
 			</Routes>

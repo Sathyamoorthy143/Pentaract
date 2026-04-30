@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::Serialize;
 
 pub struct InFile {
@@ -23,6 +24,8 @@ pub struct File {
     pub size: i64,
     pub storage_id: uuid::Uuid,
     pub is_uploaded: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 impl File {
@@ -39,6 +42,8 @@ impl File {
             size,
             storage_id,
             is_uploaded,
+            created_at: chrono::Utc::now().naive_utc(),
+            updated_at: chrono::Utc::now().naive_utc(),
         }
     }
 }
@@ -48,6 +53,8 @@ pub struct DBFSElement {
     pub name: String,
     pub size: i64,
     pub is_file: bool,
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize)]
@@ -56,10 +63,19 @@ pub struct FSElement {
     pub name: String,
     pub size: i64,
     pub is_file: bool,
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize)]
 pub struct SearchFSElement {
     pub path: String,
     pub is_file: bool,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub struct FileNote {
+    pub id: uuid::Uuid,
+    pub file_id: uuid::Uuid,
+    pub note: String,
 }

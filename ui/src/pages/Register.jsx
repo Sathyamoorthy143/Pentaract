@@ -33,15 +33,20 @@ const Register = () => {
 		const email = data.get('email')
 		const password = data.get('password')
 
-		// Registerting
+		// Registering
 		await API.users.register(email, password)
 
-		addAlert('You registered successfully')
+		// BUG FIX #6: addAlert was called without the second `severity` argument.
+		// This causes the SUID <Alert> to render without a colour/icon because
+		// `severity={undefined}` is passed through.  Passing 'success' shows the
+		// green check-mark banner as intended.
+		addAlert('You registered successfully!', 'success')
 
-		// Authenticating
+		// Authenticating immediately after registration
 		const tokenData = await API.auth.login(email, password)
 
 		setStore('access_token', tokenData.access_token)
+		setStore('user', { email })
 
 		const redirect_url = store.redirect || '/'
 		navigate(redirect_url)

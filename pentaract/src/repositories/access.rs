@@ -8,6 +8,7 @@ use crate::schemas::access::GrantAccess;
 
 pub const TABLE: &str = "access";
 
+#[derive(Clone)]
 pub struct AccessRepository<'d> {
     db: &'d PgPool,
 }

@@ -28,7 +28,7 @@ use super::files::FilesRouter;
 pub struct StoragesRouter;
 
 impl StoragesRouter {
-    pub fn get_router(state: Arc<AppState>) -> Router {
+    pub fn get_router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         let files_router = FilesRouter::get_router(state.clone());
         Router::new()
             .route("/", get(Self::list).post(Self::create))

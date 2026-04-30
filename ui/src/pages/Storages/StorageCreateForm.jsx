@@ -1,15 +1,8 @@
-import Divider from '@suid/material/Divider'
-import Box from '@suid/material/Box'
-import Button from '@suid/material/Button'
-import TextField from '@suid/material/TextField'
-import Typography from '@suid/material/Typography'
-import { createSignal } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import { useNavigate } from '@solidjs/router'
-import Stack from '@suid/material/Stack'
-import IconButton from '@suid/material/IconButton'
+import ArrowBackIcon from '@suid/icons-material/ArrowBack'
 import HelpOutlineIcon from '@suid/icons-material/HelpOutline'
-import ChevronLeftIcon from '@suid/icons-material/ChevronLeft'
-
+import StorageIcon from '@suid/icons-material/Storage'
 import API from '../../api'
 import { alertStore } from '../../components/AlertStack'
 
@@ -18,106 +11,98 @@ const StorageCreateForm = () => {
 	const { addAlert } = alertStore
 	const navigate = useNavigate()
 
-	/**
-	 *
-	 * @param {SubmitEvent} event
-	 */
 	const handleSubmit = async (event) => {
 		event.preventDefault()
-
 		const data = new FormData(event.currentTarget)
-
 		const name = data.get('name')
 		const chatId = parseInt(data.get('chat_id'))
 
 		await API.storages.createStorage(name, chatId)
-
 		addAlert(`Created storage "${name}"`, 'success')
-
 		navigate('/storages')
 	}
 
-	/**
-	 *
-	 * @param {SubmitEvent} event
-	 */
 	const validateChatId = (event) => {
-		event.preventDefault()
 		const value = event.currentTarget.value
-
 		let err = null
-
 		if (value > 0) {
 			err = 'Chat id must be a valid negative integer'
 		} else if (value === '') {
-			err = 'Chat id is required and must be a valid negative integer'
+			err = 'Chat id is required'
 		}
-
 		setChatIdErr(err)
 	}
 
 	return (
-		<Stack sx={{ maxWidth: 540, minWidth: 320, mx: 'auto' }}>
-			<Box>
-				<Button
+		<div class="max-w-xl mx-auto space-y-10 py-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
+			<div class="flex items-center justify-between">
+				<button 
 					onClick={() => navigate('/storages')}
-					variant="outlined"
-					startIcon={<ChevronLeftIcon />}
+					class="p-3 bg-white/5 hover:bg-white/10 rounded-2xl text-white/40 hover:text-white transition-all active:scale-90"
 				>
-					Back
-				</Button>
-			</Box>
+					<ArrowBackIcon />
+				</button>
+				<a 
+					href="https://github.com/Dominux/Pentaract/wiki/Creating-storages" 
+					target="_blank"
+					class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-secondary hover:underline"
+				>
+					Documentation
+					<HelpOutlineIcon sx={{ fontSize: 16 }} />
+				</a>
+			</div>
 
-			<Box
-				component="form"
-				onSubmit={handleSubmit}
-				sx={{
-					py: 2,
-					mx: 'auto',
-					maxWidth: 400,
-					display: 'flex',
-					flexDirection: 'column',
-					alignItems: 'center',
-					'& > :not(style)': { my: 1.5 },
-				}}
-			>
-				<Typography variant="h5">
-					Register new storage
-					<a
-						href="https://github.com/Dominux/Pentaract/wiki/Creating-storages"
-						target="_blank"
+			<div class="glass-panel p-10 space-y-8 relative overflow-hidden">
+				{/* Decorative Background */}
+				<div class="absolute -right-10 -bottom-10 opacity-[0.03] pointer-events-none">
+					<StorageIcon sx={{ fontSize: 200 }} />
+				</div>
+
+				<div class="text-center">
+					<h1 class="text-3xl font-black text-white tracking-tighter uppercase italic">Initialize Node</h1>
+					<p class="text-white/60 text-[10px] font-bold uppercase tracking-[0.2em] mt-2">Connect a new Telegram-backed data cluster</p>
+				</div>
+
+				<form onSubmit={handleSubmit} class="space-y-8 relative z-10">
+					<div class="space-y-6">
+						<div class="space-y-2">
+							<label class="text-[10px] font-bold text-white/70 uppercase tracking-widest ml-1">Cluster Name</label>
+							<input
+								name="name"
+								required
+								placeholder="e.g. ALPHA-CENTAURI"
+								class="w-full bg-white/[0.05] border border-white/20 rounded-2xl px-6 py-4 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-secondary/40 focus:bg-white/10 transition-all font-mono text-sm"
+							/>
+						</div>
+
+						<div class="space-y-2">
+							<label class="text-[10px] font-bold text-white/70 uppercase tracking-widest ml-1">Telegram Chat ID</label>
+							<input
+								name="chat_id"
+								type="number"
+								required
+								onInput={validateChatId}
+								placeholder="-100123456789"
+								class={`w-full bg-white/[0.05] border rounded-2xl px-6 py-4 text-white placeholder-white/50 focus:outline-none focus:ring-2 transition-all font-mono text-sm ${
+									chatIdErr() ? 'border-red-500/50 focus:ring-red-500/50' : 'border-white/20 focus:ring-secondary/40 focus:bg-white/10'
+								}`}
+							/>
+							<Show when={chatIdErr()}>
+								<p class="text-[10px] text-red-400 font-bold uppercase tracking-widest ml-1">{chatIdErr()}</p>
+							</Show>
+						</div>
+					</div>
+
+					<button
+						type="submit"
+						disabled={chatIdErr() !== null}
+						class="w-full bg-secondary text-primary font-black py-5 rounded-2xl hover:glow-secondary transition-all active:scale-[0.98] disabled:opacity-30 disabled:hover:glow-none uppercase tracking-widest text-xs"
 					>
-						<IconButton color="warning" sx={{ py: 0 }}>
-							<HelpOutlineIcon />
-						</IconButton>
-					</a>
-				</Typography>
-				<Divider />
-				<TextField
-					id="name"
-					name="name"
-					label="Name"
-					variant="standard"
-					fullWidth
-					required
-				/>
-				<TextField
-					id="chat_id"
-					name="chat_id"
-					label="Chat id"
-					type="number"
-					variant="standard"
-					onChange={validateChatId}
-					helperText={chatIdErr}
-					error={typeof chatIdErr() === 'string'}
-					fullWidth
-					required
-				/>
-				<Button type="submit" variant="contained" color="secondary">
-					Register
-				</Button>
-			</Box>
-		</Stack>
+						Authorize Registration
+					</button>
+				</form>
+			</div>
+		</div>
 	)
 }
 

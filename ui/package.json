@@ -1,6 +1,7 @@
 {
   "name": "vite-template-solid",
   "version": "0.0.0",
+  "type": "module",
   "description": "",
   "scripts": {
     "start": "vite",
@@ -10,7 +11,12 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.4",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.12",
     "solid-devtools": "^0.27.3",
+    "tailwindcss": "^4.2.4",
+    "tailwindcss-animate": "^1.0.7",
     "vite": "^4.3.9",
     "vite-plugin-solid": "^2.7.0"
   },
@@ -19,6 +25,7 @@
     "@suid/icons-material": "^0.6.11",
     "@suid/material": "^0.15.1",
     "@suid/vite-plugin": "^0.1.5",
-    "solid-js": "^1.8.4"
+    "solid-js": "^1.8.4",
+    "solid-transition-group": "^0.3.0"
   }
 }

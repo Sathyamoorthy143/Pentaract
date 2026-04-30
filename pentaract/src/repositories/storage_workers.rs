@@ -8,6 +8,8 @@ use crate::models::storage_workers::{InStorageWorker, StorageWorker, StorageWork
 const STORAGE_WORKERS_TABLE: &str = "storage_workers";
 const STORAGE_WORKERS_USAGES_TABLE: &str = "storage_workers_usages";
 
+#[derive(Clone)]
+#[derive(Clone)]
 pub struct StorageWorkersRepository<'d> {
     db: &'d PgPool,
 }

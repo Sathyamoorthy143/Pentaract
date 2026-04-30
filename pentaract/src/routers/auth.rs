@@ -12,7 +12,7 @@ use crate::{
 pub struct AuthRouter;
 
 impl AuthRouter {
-    pub fn get_router(state: Arc<AppState>) -> Router {
+    pub fn get_router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         Router::new()
             .route("/login", post(Self::login))
             .with_state(state)

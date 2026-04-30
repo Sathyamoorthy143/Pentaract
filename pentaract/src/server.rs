@@ -11,7 +11,7 @@ use crate::{
     common::routing::app_state::AppState,
     routers::{
         auth::AuthRouter, storage_workers::StorageWorkersRouter, storages::StoragesRouter,
-        users::UsersRouter,
+        users::UsersRouter, activity_logs::ActivityLogsRouter,
     },
 };
 
@@ -25,15 +25,16 @@ impl Server {
         let serve_assets = ServeDir::new("ui/assets");
 
         let router = Router::new()
-            .nest("/api", Self::build_api_router(workers, app_state))
+            .nest("/api", Self::build_api_router(workers, app_state.clone()))
             .nest_service("/assets", serve_assets)
-            .fallback_service(serve_ui);
+            .fallback_service(serve_ui)
+            .with_state(app_state);
 
         Self { router }
     }
 
     #[inline]
-    fn build_api_router(workers: usize, app_state: Arc<AppState>) -> Router {
+    fn build_api_router(workers: usize, app_state: Arc<AppState>) -> Router<Arc<AppState>> {
         let app_cors = cors::CorsLayer::new()
             .allow_methods(cors::Any)
             .allow_headers(cors::Any)
@@ -43,6 +44,7 @@ impl Server {
             .nest("/users", UsersRouter::get_router(app_state.clone()))
             .nest("/auth", AuthRouter::get_router(app_state.clone()))
             .nest("/storages", StoragesRouter::get_router(app_state.clone()))
+            .nest("/activity_logs", ActivityLogsRouter::get_router(app_state.clone()))
             .nest(
                 "/storage_workers",
                 StorageWorkersRouter::get_router(app_state.clone()),

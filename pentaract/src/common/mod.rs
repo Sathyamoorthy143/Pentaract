@@ -6,3 +6,4 @@ pub mod password_manager;
 pub mod routing;
 pub mod telegram_api;
 pub mod types;
+pub mod email;
